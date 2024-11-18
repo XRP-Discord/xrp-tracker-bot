@@ -9,8 +9,7 @@
 
 ```bash
 python3 -m venv .venv
-source ./venv/bin/bin/activate
-pip install -r requirements.txt
+./venv/bin/pip install -r requirements.txt
 cp .env.example .env
 ```
 
@@ -21,7 +20,7 @@ Before running the bot, make sure you have configured all the fields in `.env`
 Run the bot:
 
 ```bash
-python main.py
+./venv/bin/python main.py
 ```
 
 ## Usage
@@ -29,21 +28,21 @@ python main.py
 To start tracking a ticker on Binance (`XRPEUR`, `XRPUSDT`, etc.), use the following chat command:
 
 ```
-$xrp monitor XRPUSDT $ 1171509693873664010
+$xrp monitor_add <ticker> <alias> <decimals> <channel_id>
 ```
 
-* `XRPUSDT` is the ticker
-* `$` is the alias put in front of the price, e.g.: `$x.xx`
-* `1171509693873664010` is the channel id, can be a text channel or a voice channel
+e.g.:
+
+```
+$xrp monitor_add XRPUSDT $ 3 1171509693873664010
+```
 
 Prices are automatically updated every 5 minutes.
 
 To stop tracking a ticker, use the chat command:
 
 ```
-$xrp monitor_remove 1171509693873664010
+$xrp monitor_remove <channel_id>
 ```
-
-* `1171509693873664010` is the channel id
 
 

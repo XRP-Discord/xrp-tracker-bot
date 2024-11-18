@@ -20,14 +20,16 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="$xrp ", intents=intents)
 
 class Monitor:
-    def __init__(self, ticker, alias):
+    def __init__(self, ticker, alias, decimals = 3):
         self.ticker = ticker
         self.alias = alias
+        self.decimals = decimals
     
     def __json__(self):
         return {
             "ticker": self.ticker,
-            "alias": self.alias
+            "alias": self.alias,
+            "decimals": self.decimals
         }
 
 def write_save():
@@ -46,12 +48,12 @@ def load_save():
             print(f'Monitor loaded: {channel_to_monitor[channel_id].ticker}')
 
 @bot.command()
-async def monitor_add(ctx, ticker, alias, channel_id): 
+async def monitor_add(ctx, ticker, alias, decimals, channel_id): 
     if ctx.author.guild_permissions.administrator == False:
         await ctx.send("Not an admin")
         return
 
-    channel_to_monitor[channel_id] = Monitor(ticker, alias)
+    channel_to_monitor[channel_id] = Monitor(ticker, alias, decimals)
     write_save()
     await ctx.send("Adding monitor for ticker `" + ticker + "` on channel `" + channel_id + "`")
 
@@ -95,7 +97,7 @@ async def update_monitors():
         data = requests.get(url).json()
         ticker_to_price = {}
         for ticker in data:
-            price = round(float(ticker["lastPrice"]), 3)
+            price = float(ticker["lastPrice"])
             price_change_percent = round(float(ticker["priceChangePercent"]), 1)
             ticker_to_price[ticker["symbol"]] = (price, price_change_percent)
     except Exception as e:
@@ -106,7 +108,7 @@ async def update_monitors():
         try:
             ticker = ticker_to_price[monitor.ticker]
     
-            price = ticker[0]
+            price = round(ticker[0], monitor.decimals)
             change_percent = ticker[1]
     
             channel = bot.get_channel(int(channel_id))
