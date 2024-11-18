@@ -107,8 +107,8 @@ async def update_monitors():
         monitor = channel_to_monitor[channel_id]
         try:
             ticker = ticker_to_price[monitor.ticker]
-    
-            price = round(ticker[0], monitor.decimals)
+
+            price = f'{ticker[0]:.{monitor.decimals}f}'
             change_percent = ticker[1]
     
             channel = bot.get_channel(int(channel_id))
