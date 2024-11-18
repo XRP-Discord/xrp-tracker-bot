@@ -1,97 +1,60 @@
 import discord
 from discord.ext import commands, tasks
+from urllib.parse import quote
+
 import requests
 import dotenv
 import os
 import json
-from urllib.parse import quote
+import jsonpickle
 
 BINANCE_API_URL = "https://api.binance.com/"
+SAVE_FILENAME = "save.json"
 
 dotenv.load_dotenv()
 
+channel_to_monitor = {}
+
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="$xrp ", intents=intents)
 
-channel_to_ticker = {}
+class Monitor:
+    def __init__(self, ticker, alias):
+        self.ticker = ticker
+        self.alias = alias
+    
+    def __json__(self):
+        return {
+            "ticker": self.ticker,
+            "alias": self.alias
+        }
 
-def load():
-    if os.path.exists('saved.json') == False:
+def write_save():
+    with open(SAVE_FILENAME, 'w') as f:
+        f.write(jsonpickle.encode(channel_to_monitor))
+        
+def load_save():
+    if os.path.exists(SAVE_FILENAME) == False:
         return
 
-    with open('saved.json', "r") as f:
+    with open(SAVE_FILENAME, 'r') as f:
         data = json.load(f)
         for channel_id in data:
-            channel_to_ticker[channel_id] = (data[channel_id][0], data[channel_id][1])
-    return
-
-def save():
-    json.dump(channel_to_ticker, open('saved.json', 'w'))
-    return
-
-@tasks.loop(minutes=5)
-async def fetch_price():
-    tickers = set()
-    for channel_id in channel_to_ticker:
-        tickers.add(channel_to_ticker[channel_id][0])
-
-    if (len(tickers) == 0):
-        return
-
-    tickers_string = ""
-    tickers_string += "["
-    for ticker in tickers:
-        tickers_string += "\"" + ticker + "\","
-
-    tickers_string = tickers_string[:-1]
-    tickers_string += ']'
-    
-    url = BINANCE_API_URL + "api/v3/ticker/24hr?symbols=" + quote(tickers_string)
-    try:
-        response = requests.get(url, timeout=2)
-        json = response.json()
-
-        ticker_to_price = {}
-        for ticker in json:
-            price = round(float(ticker["lastPrice"]), 3)
-            price_change_percent = round(float(ticker["priceChangePercent"]), 1)
-            ticker_to_price[ticker["symbol"]] = (price, price_change_percent)
-
-        for channel_id in channel_to_ticker:
-            ticker = channel_to_ticker[channel_id][0]
-            alias = channel_to_ticker[channel_id][1]
-            price = ticker_to_price[ticker][0]
-            price_change_percent = ticker_to_price[ticker][1]
-
-            channel = bot.get_channel(int(channel_id))
-            plus_minus = price_change_percent > 0 and "+" or ""
-            color = '🟠'
-            if price_change_percent > 0:
-                color = '🟢'
-            elif price_change_percent < 0:
-                color = '🔴'
-    
-            await channel.edit(name=f'{color} {alias}{price} ({plus_minus}{price_change_percent}%)')
-
-    except Exception as e:
-        print("Error fetching price: " + e)
-
-@bot.event
-async def on_ready():
-    load()
-    fetch_price.start()
+            monitor = data[channel_id]
+            channel_to_monitor[channel_id] = Monitor(monitor["ticker"], monitor["alias"])
+            print(f'Monitor loaded: {channel_to_monitor[channel_id].ticker}')
 
 @bot.command()
-async def monitor(ctx, ticker, alias, channel_id):
+async def monitor_add(ctx, ticker, alias, channel_id): 
     if ctx.author.guild_permissions.administrator == False:
         await ctx.send("Not an admin")
         return
 
-    channel_to_ticker[channel_id] = (ticker, alias)
-    save()
+    channel_to_monitor[channel_id] = Monitor(ticker, alias)
+    write_save()
     await ctx.send("Adding monitor for ticker `" + ticker + "` on channel `" + channel_id + "`")
+
 
 @bot.command()
 async def monitor_remove(ctx, channel_id):
@@ -99,8 +62,68 @@ async def monitor_remove(ctx, channel_id):
         await ctx.send("Not an admin")
         return
 
-    channel_to_ticker.pop(channel_id)
-    save()
-    await ctx.send("Removing monitor for channel `" + channel_id + "`")
+    channel_to_monitor.pop(channel_id)
+    write_save()
+    await ctx.send("Removed monitor on channel `" + channel_id + "`")
 
+@tasks.loop(minutes=5.5)
+async def update_monitors():
+    print("Updating monitors")
+    
+    tickers = set()
+    tickers_string = ""
+    
+    if len(channel_to_monitor) == 0:
+        return
+
+    for channel_id in channel_to_monitor:
+        monitor = channel_to_monitor[channel_id]
+        tickers.add(monitor.ticker)
+    
+        tickers_string = ""
+        tickers_string += "["
+        for ticker in tickers:
+            tickers_string += "\"" + ticker + "\","
+    
+        tickers_string = tickers_string[:-1]
+        tickers_string += ']'
+    
+    url = BINANCE_API_URL + "api/v3/ticker/24hr?symbols=" + quote(tickers_string)
+
+    ticker_to_price = {} 
+    try:
+        data = requests.get(url).json()
+        ticker_to_price = {}
+        for ticker in data:
+            price = round(float(ticker["lastPrice"]), 3)
+            price_change_percent = round(float(ticker["priceChangePercent"]), 1)
+            ticker_to_price[ticker["symbol"]] = (price, price_change_percent)
+    except Exception as e:
+        print("Error fetching price: " + str(e))
+
+    for channel_id in channel_to_monitor:
+        monitor = channel_to_monitor[channel_id]
+        try:
+            ticker = ticker_to_price[monitor.ticker]
+    
+            price = ticker[0]
+            change_percent = ticker[1]
+    
+            channel = bot.get_channel(int(channel_id))
+            plus_minus = change_percent > 0 and "+" or ""
+            color = '🟠'
+            if change_percent > 0:
+                color = '🟢'
+            elif change_percent < 0:
+                color = '🔴'
+    
+            await channel.edit(name=f'{color} {monitor.alias}{price} ({plus_minus}{change_percent}%)')
+        except Exception as e:
+            print("Error changing channel: " + str(e))
+
+@bot.event
+async def on_ready():
+    update_monitors.start()
+
+load_save()
 bot.run(os.getenv("DISCORD_BOT_TOKEN"))
