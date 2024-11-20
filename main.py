@@ -44,7 +44,7 @@ def load_save():
         data = json.load(f)
         for channel_id in data:
             monitor = data[channel_id]
-            channel_to_monitor[channel_id] = Monitor(monitor["ticker"], monitor["alias"])
+            channel_to_monitor[channel_id] = Monitor(monitor["ticker"], monitor["alias"], monitor["decimals"])
             print(f'Monitor loaded: {channel_to_monitor[channel_id].ticker}')
 
 @bot.command()
